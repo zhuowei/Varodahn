@@ -13,14 +13,29 @@ import net.zhuoweizhang.varodahn.proto.*;
 
 public class PskTester {
 
+	private static byte[] magicBytes = "VT01".getBytes(Charset.forName("UTF-8"));
+
 	public static GeneratedMessage readMessage(DataInputStream in) throws Exception {
 		int length = Integer.reverseBytes(in.readInt());
 		int magic = Integer.reverseBytes(in.readInt());
 		int emsg = Integer.reverseBytes(in.readInt());
-		int empty = Integer.reverseBytes(in.readInt());
+		int empty = Integer.reverseBytes(in.readInt()); // according to SteamKit this is the length of legacy header. Always 0.
 		System.out.println(emsg);
 		Class<? extends GeneratedMessage> clazz = EMsgRemoteClient.getById(emsg & 0xffff);
-		return (GeneratedMessage) clazz.getMethod("parseFrom", InputStream.class).invoke(null, in);
+		byte[] messageBytes = new byte[length - 8];
+		in.read(messageBytes);
+		return (GeneratedMessage) clazz.getMethod("parseFrom", byte[].class).invoke(null, messageBytes);
+	}
+
+	public static void writeMessage(DataOutputStream out, GeneratedMessage msg) throws Exception {
+		byte[] serialized = msg.toByteArray();
+		int length = serialized.length + 8; // size of message + size of emsg field + size of length of legacy header
+		out.writeInt(Integer.reverseBytes(length));
+		out.write(magicBytes);
+		int emsg = EMsgRemoteClient.getByClass(msg.getClass()) | 0x80000000; // SteamKit says 0x80000000 is used to flag ProtoBuf messages
+		out.writeInt(Integer.reverseBytes(emsg));
+		out.writeInt(0); // SteamKit says this is the length of the legacy header. Always 0.
+		out.write(serialized);
 	}
 
 	public static void processMessage(GeneratedMessage msg) {
@@ -28,6 +43,14 @@ public class PskTester {
 	}
 
 	public static void processLoop(DataInputStream in, DataOutputStream out) throws Exception {
+		SteamMsgRemoteClient.CMsgRemoteClientAuthResponse outmsg = SteamMsgRemoteClient.CMsgRemoteClientAuthResponse.newBuilder().
+			build();
+		writeMessage(out, outmsg);
+		SteamMsgRemoteClient.CMsgRemoteClientStartStream outmsg2 = SteamMsgRemoteClient.CMsgRemoteClientStartStream.newBuilder().
+			setAppId(400).
+			build();
+		writeMessage(out, outmsg2);
+
 		for(;;) {
 			GeneratedMessage msg = readMessage(in);
 			processMessage(msg);
