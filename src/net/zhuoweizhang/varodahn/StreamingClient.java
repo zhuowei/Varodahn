@@ -16,6 +16,7 @@ public class StreamingClient implements Runnable {
 	private static final int PACKET_TYPE_CONNECT = 1;
 	private static final int PACKET_TYPE_CONNECT_RESPONSE = 2;
 	private static final int PACKET_TYPE_CONTROL = 5;
+	private static final int PACKET_TYPE_DATA = 6;
 	private static final int PACKET_TYPE_CONTROL_ACKNOWLEDGE = 7;
 	private static final int PACKET_TYPE_DISCONNECT = 9;
 
@@ -64,7 +65,7 @@ public class StreamingClient implements Runnable {
 	 * all values are little endian.
 	 * byte: type of packet:
 	 *	1 = open connection, 2 = open connection response, 3 = ???, 
-	 * 	5 = control channel, 6 = ???, 7 = control channel acknowledge, 9 = disconnect
+	 * 	5 = control channel, 6 = data channel, 7 = control channel acknowledge, 9 = disconnect
 	 * byte: unknown: repeat count?
 	 * byte: sender ID
 	 * byte: receiver ID (0 when sending open connection packet)
@@ -143,14 +144,27 @@ public class StreamingClient implements Runnable {
 		sendControlAckMessage(buffer, begin);
 		GeneratedMessage msg = readControlMessage(buffer, begin, length);
 		System.out.println(msg);
-		
+		if (msg instanceof CNegotiationInitMsg) {
+			CNegotiationInitMsg initMsg = (CNegotiationInitMsg) msg;
+			CNegotiationSetConfigMsg setconfigMsg = CNegotiationSetConfigMsg.newBuilder().
+				setConfig(CNegotiatedConfig.newBuilder().
+					setReliableData(false).
+					setSelectedAudioCodec(EStreamAudioCodec.k_EStreamAudioCodecVorbis).
+					setSelectedVideoCodec(EStreamVideoCodec.k_EStreamVideoCodecH264)
+					// todo: un-hardcode
+				).
+				build();
+			writeControlMessage(setconfigMsg);
+		} else if (msg instanceof CNegotiationSetConfigMsg) {
+			writeControlMessage(CNegotiationCompleteMsg.getDefaultInstance());
+		}
 	}
 	private GeneratedMessage readControlMessage(byte[] buffer, int beginOfBuffer, int lengthOfBuffer) {
 		int begin = beginOfBuffer + 13;
 		int length = lengthOfBuffer - 13;
 		int escmsg = buffer[begin] & 0xff;
 		Class<? extends GeneratedMessage> clazz = EStreamControlMessageMap.getById(escmsg);
-		System.out.println(clazz);
+		System.out.println(Integer.toString(escmsg, 16) + ":" + clazz);
 		if (System.getenv("VARODAHN_STREAMNOPARSE") != null) return null;
 		byte[] messageBytes = new byte[length - 1];
 		System.arraycopy(buffer, begin + 1, messageBytes, 0, length - 1);
