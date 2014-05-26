@@ -16,6 +16,7 @@ public class StreamingClient implements Runnable {
 	private static final int PACKET_TYPE_CONNECT = 1;
 	private static final int PACKET_TYPE_CONNECT_RESPONSE = 2;
 	private static final int PACKET_TYPE_CONTROL = 5;
+	private static final int PACKET_TYPE_CONTROL_ACKNOWLEDGE = 7;
 	private static final int PACKET_TYPE_DISCONNECT = 9;
 
 	private String serverAddr;
@@ -63,7 +64,7 @@ public class StreamingClient implements Runnable {
 	 * all values are little endian.
 	 * byte: type of packet:
 	 *	1 = open connection, 2 = open connection response, 3 = ???, 
-	 * 	5 = control channel, 6 = ???, 7 = ???, 9 = disconnect
+	 * 	5 = control channel, 6 = ???, 7 = control channel acknowledge, 9 = disconnect
 	 * byte: unknown: repeat count?
 	 * byte: sender ID
 	 * byte: receiver ID (0 when sending open connection packet)
@@ -72,9 +73,11 @@ public class StreamingClient implements Runnable {
 	 * byte: dunno, always zero
 	 * short: sequence ID for that packet type
 	 * int: probably a timestamp: constantly increasing. The two sides start with different values for this field.
-	 * payload begins here. All packet types with the exception of 1 (open connection) begins with:
+		Used for acknowledging packets in type 2 and 5.
+	 * payload begins here. All packet types with the exception of 1 (open connection) and the acknowledge packets begins with:
 	 * byte: packet subtype: unique for that channel.
 	 * 	For control channel (5): represented by EStreamControlMessage on the Protobuf side
+	 * the acknowledge packets (2, 7) instead just have the timestamp of the packet they are acknowledging.
 	 */
 
 	private void writeOpenConnectionMessage() throws IOException {
@@ -125,8 +128,11 @@ public class StreamingClient implements Runnable {
 		}
 	}
 
+	/**
+	 * Get a timestamp, which is used as an autoincrementing packet ID.
+	 */
 	private int getTimestamp() {
-		return 0x12345678;//(int) System.currentTimeMillis();
+		return (int) System.currentTimeMillis();
 	}
 
 	private void setupLogging() throws IOException {
@@ -134,8 +140,10 @@ public class StreamingClient implements Runnable {
 	}
 
 	private void processControlMessage(byte[] buffer, int begin, int length) throws IOException {
+		sendControlAckMessage(buffer, begin);
 		GeneratedMessage msg = readControlMessage(buffer, begin, length);
 		System.out.println(msg);
+		
 	}
 	private GeneratedMessage readControlMessage(byte[] buffer, int beginOfBuffer, int lengthOfBuffer) {
 		int begin = beginOfBuffer + 13;
@@ -170,5 +178,23 @@ public class StreamingClient implements Runnable {
 		withId[0] = (byte) escmsg;
 		System.arraycopy(serialized, 0, withId, 1, serialized.length);
 		writeRawMessage(PACKET_TYPE_CONTROL, 1, withId);
+	}
+
+	private void sendControlAckMessage(byte[] originalMessage, int offset) throws IOException {
+		byte[] outmsg = new byte[4];
+		System.arraycopy(originalMessage, offset + 9, outmsg, 0, 4);
+		writeRawMessage(PACKET_TYPE_CONTROL_ACKNOWLEDGE, 1, outmsg);
+	}
+
+	private void writeAckMessageRaw(int timestamp) throws IOException {
+		byte[] data = new byte[4];
+		writeIntToByteArray(data, 0, timestamp);
+		writeRawMessage(PACKET_TYPE_CONTROL_ACKNOWLEDGE, 1, data);
+	}
+	private static void writeIntToByteArray(byte[] buffer, int offset, int value) {
+		buffer[offset++] = (byte) value;
+		buffer[offset++] = (byte) (value >> 8);
+		buffer[offset++] = (byte) (value >> 16);
+		buffer[offset++] = (byte) (value >> 24);
 	}
 }
