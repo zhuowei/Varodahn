@@ -7,12 +7,15 @@ import java.nio.charset.Charset;
 import org.spongycastle.crypto.tls.*;
 import org.spongycastle.util.encoders.*;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.GeneratedMessage;
 
 import net.zhuoweizhang.varodahn.proto.*;
 import static net.zhuoweizhang.varodahn.proto.SteamMsgRemoteClient.*;
 
 public class PskTester {
+
+	private static String serverAddr;
 
 	private static byte[] magicBytes = "VT01".getBytes(Charset.forName("UTF-8"));
 
@@ -22,7 +25,7 @@ public class PskTester {
 		int emsg = Integer.reverseBytes(in.readInt());
 		int empty = Integer.reverseBytes(in.readInt()); // according to SteamKit this is the length of legacy header. Always 0.
 		System.out.println(emsg);
-		Class<? extends GeneratedMessage> clazz = EMsgRemoteClient.getById(emsg & 0xffff);
+		Class<? extends GeneratedMessage> clazz = EMsgRemoteClient.getById(emsg & 0x7fffffff);
 		byte[] messageBytes = new byte[length - 8];
 		in.read(messageBytes);
 		return (GeneratedMessage) clazz.getMethod("parseFrom", byte[].class).invoke(null, messageBytes);
@@ -33,7 +36,8 @@ public class PskTester {
 		int length = serialized.length + 8; // size of message + size of emsg field + size of length of legacy header
 		out.writeInt(Integer.reverseBytes(length));
 		out.write(magicBytes);
-		int emsg = EMsgRemoteClient.getByClass(msg.getClass()) | 0x80000000; // SteamKit says 0x80000000 is used to flag ProtoBuf messages
+		int emsg = EMsgRemoteClient.getByClass(msg.getClass()) | 0x80000000;
+		// SteamKit says 0x80000000 is used to flag ProtoBuf messages
 		out.writeInt(Integer.reverseBytes(emsg));
 		out.writeInt(0); // SteamKit says this is the length of the legacy header. Always 0.
 		out.write(serialized);
@@ -48,7 +52,7 @@ public class PskTester {
 		}
 		String appIdStr = System.getenv("VARODAHN_APPID");
 		CMsgRemoteClientStartStream startStreamMessage = CMsgRemoteClientStartStream.newBuilder().
-			setAppId(appIdStr == null? 400: Integer.parseInt(appIdStr)).
+			setAppId(appIdStr == null? 400: (int) Long.parseLong(appIdStr)).
 			build();
 		CMsgRemoteClientAuthResponse authResponseMessage = CMsgRemoteClientAuthResponse.newBuilder().
 			setEresult(1). // success
@@ -66,6 +70,15 @@ public class PskTester {
 		} else if (msg instanceof CMsgRemoteClientPing) {
 			// ping; we send a response
 			writeMessage(out, CMsgRemoteClientPingResponse.getDefaultInstance());
+		} else if (msg instanceof CMsgRemoteClientStartStreamResponse) {
+			// we're streaming! whoo!
+			CMsgRemoteClientStartStreamResponse resp = (CMsgRemoteClientStartStreamResponse) msg;
+			if (resp.getELaunchResult() == 1) { // huge success
+				int streamPort = resp.hasStreamPort()? resp.getStreamPort(): 27031;
+				ByteString authToken = resp.getAuthToken();
+				StreamingClient streamingClient = new StreamingClient(serverAddr, streamPort, authToken);
+				streamingClient.start();
+			}
 		}
 	}
 
@@ -77,6 +90,7 @@ public class PskTester {
 	}
 
 	public static void main(String[] args) throws Exception {
+		serverAddr = args[0];
 		Socket sock = new Socket(args[0], Integer.parseInt(args[1]));
 		TlsClientProtocol tlsClientProtocol = new TlsClientProtocol(sock.getInputStream(), sock.getOutputStream());
 		TlsPSKIdentity identity = new SimpleTlsPSKIdentity(

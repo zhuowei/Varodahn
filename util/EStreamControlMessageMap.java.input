@@ -1,0 +1,34 @@
+package net.zhuoweizhang.varodahn.proto;
+
+import java.util.*;
+
+import com.google.protobuf.GeneratedMessage;
+
+import static net.zhuoweizhang.varodahn.proto.StreamingClientMsg.*;
+import static net.zhuoweizhang.varodahn.proto.StreamingClientMsg.EStreamControlMessage.*;
+public final class EStreamControlMessageMap {
+
+	private EStreamControlMessageMap() {}
+
+	private static Map<Integer, Class<? extends GeneratedMessage>> idToClass = new HashMap<Integer, Class<? extends GeneratedMessage>>();
+
+	private static Map<Class<? extends GeneratedMessage>, Integer> classToId = new HashMap<Class<? extends GeneratedMessage>, Integer>();
+
+	static {
+ADDSTUFFHERE
+	}
+
+
+	public static Class<? extends GeneratedMessage> getById(int id) {
+		return idToClass.get(id);
+	}
+
+	public static int getByClass(Class<? extends GeneratedMessage> clazz) {
+		return classToId.get(clazz);
+	}
+
+	private static void map(int id, Class<? extends GeneratedMessage> clazz) {
+		idToClass.put(id, clazz);
+		classToId.put(clazz, id);
+	}
+}
