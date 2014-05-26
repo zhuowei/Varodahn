@@ -16,7 +16,7 @@ public class StreamingClient implements Runnable {
 	private static final int PACKET_TYPE_CONNECT = 1;
 	private static final int PACKET_TYPE_CONNECT_RESPONSE = 2;
 	private static final int PACKET_TYPE_CONTROL = 5;
-	private static final int PACKET_TYPE_DATA = 6;
+	private static final int PACKET_TYPE_CONTROL_CONTINUED = 6;
 	private static final int PACKET_TYPE_CONTROL_ACKNOWLEDGE = 7;
 	private static final int PACKET_TYPE_DISCONNECT = 9;
 
@@ -30,6 +30,8 @@ public class StreamingClient implements Runnable {
 	private short[] packetSequenceIds = new short[10];
 	private OutputStream loggingOut;
 	private boolean connected = false;
+	private ByteArrayOutputStream splitPacketBuffer = new ByteArrayOutputStream();
+	private int splitPacketRemaining = 0;
 
 	public StreamingClient(String serverAddr, int port, ByteString authToken) {
 		this.serverAddr = serverAddr;
@@ -65,12 +67,14 @@ public class StreamingClient implements Runnable {
 	 * all values are little endian.
 	 * byte: type of packet:
 	 *	1 = open connection, 2 = open connection response, 3 = ???, 
-	 * 	5 = control channel, 6 = data channel, 7 = control channel acknowledge, 9 = disconnect
-	 * byte: unknown: repeat count?
+	 * 	5 = control channel, 6 = control continued, 7 = control channel acknowledge, 9 = disconnect
+	 * byte: repeat count for repeating dropped packets (stops incrementing after 0xff)
 	 * byte: sender ID
 	 * byte: receiver ID (0 when sending open connection packet)
 	 * byte: dunno: 0, 1, 2 sighted
-	 * byte: dunno, always zero
+	 * byte: usually 0, used for reconstructing split packets
+		For control channel this will be number of packets remaining to read; split packets will be send on channel 6
+		For the split packets on channel 6, this is a sequence number.
 	 * byte: dunno, always zero
 	 * short: sequence ID for that packet type
 	 * int: probably a timestamp: constantly increasing. The two sides start with different values for this field.
@@ -86,6 +90,7 @@ public class StreamingClient implements Runnable {
 	}
 
 	private void writeRawMessage(int packetType, int flags, byte[] payload) throws IOException {
+		// todo: splitting oversized packets.
 		ByteArrayOutputStream bos = new ByteArrayOutputStream();
 		DataOutputStream dos = new DataOutputStream(bos);
 		dos.write(packetType);
@@ -118,7 +123,23 @@ public class StreamingClient implements Runnable {
 					sendAuthMessage();
 					break;
 				case PACKET_TYPE_CONTROL:
+					if (byteBuf[5] != 0) { //split packet
+						splitPacketBuffer.reset();
+						splitPacketBuffer.write(byteBuf, 0, packet.getLength());
+						splitPacketRemaining = byteBuf[5];
+						break;
+					}
 					processControlMessage(byteBuf, 0, packet.getLength());
+					break;
+				case PACKET_TYPE_CONTROL_CONTINUED:
+					// todo: check the packet timestamp/ID to see if it matched the split packet
+					splitPacketBuffer.write(byteBuf, 13, packet.getLength() - 13);
+					splitPacketRemaining--;
+					if (splitPacketRemaining == 0) {
+						byte[] fullBuf = splitPacketBuffer.toByteArray();
+						splitPacketBuffer.reset();
+						processControlMessage(fullBuf, 0, fullBuf.length);
+					}
 					break;
 				case PACKET_TYPE_DISCONNECT:
 					connected = false;
