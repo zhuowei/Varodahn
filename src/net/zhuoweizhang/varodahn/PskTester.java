@@ -10,6 +10,7 @@ import org.spongycastle.util.encoders.*;
 import com.google.protobuf.GeneratedMessage;
 
 import net.zhuoweizhang.varodahn.proto.*;
+import static net.zhuoweizhang.varodahn.proto.SteamMsgRemoteClient.*;
 
 public class PskTester {
 
@@ -38,22 +39,40 @@ public class PskTester {
 		out.write(serialized);
 	}
 
-	public static void processMessage(GeneratedMessage msg) {
+	public static void processMessage(GeneratedMessage msg, DataInputStream in, DataOutputStream out) throws Exception {
+		System.out.println(msg.getClass());
 		System.out.println(msg);
+		if ("1".equals(System.getenv("VARODAHN_ECHO"))) {
+			writeMessage(out, msg);
+			return;
+		}
+		String appIdStr = System.getenv("VARODAHN_APPID");
+		CMsgRemoteClientStartStream startStreamMessage = CMsgRemoteClientStartStream.newBuilder().
+			setAppId(appIdStr == null? 400: Integer.parseInt(appIdStr)).
+			build();
+		CMsgRemoteClientAuthResponse authResponseMessage = CMsgRemoteClientAuthResponse.newBuilder().
+			setEresult(1). // success
+			build();
+		if (msg instanceof CMsgRemoteClientAuth) {
+			// echo back the auth so that we can log in
+			writeMessage(out, msg);
+		} else if (msg instanceof CMsgRemoteClientAuthResponse) {
+			// same to you, sir. Allow the other side to log in too.
+			writeMessage(out, authResponseMessage);
+			// we've got a response; send the start game message
+			if (System.getenv("VARODAHN_DONTSTART") == null) {
+				writeMessage(out, startStreamMessage);
+			}
+		} else if (msg instanceof CMsgRemoteClientPing) {
+			// ping; we send a response
+			writeMessage(out, CMsgRemoteClientPingResponse.getDefaultInstance());
+		}
 	}
 
 	public static void processLoop(DataInputStream in, DataOutputStream out) throws Exception {
-		SteamMsgRemoteClient.CMsgRemoteClientAuthResponse outmsg = SteamMsgRemoteClient.CMsgRemoteClientAuthResponse.newBuilder().
-			build();
-		writeMessage(out, outmsg);
-		SteamMsgRemoteClient.CMsgRemoteClientStartStream outmsg2 = SteamMsgRemoteClient.CMsgRemoteClientStartStream.newBuilder().
-			setAppId(400).
-			build();
-		writeMessage(out, outmsg2);
-
 		for(;;) {
 			GeneratedMessage msg = readMessage(in);
-			processMessage(msg);
+			processMessage(msg, in, out);
 		}
 	}
 
