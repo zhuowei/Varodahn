@@ -16,7 +16,6 @@ TCP control protocol configs:
 
 UDP streaming protocol configs:
 
-- VARODAHN_STREAMNOPARSE: do not try to parse Protocol Buffer messages
 
 == Thanks ==
 

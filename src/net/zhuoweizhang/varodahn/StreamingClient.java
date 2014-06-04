@@ -35,6 +35,7 @@ public class StreamingClient implements Runnable {
 	private boolean connected = false;
 	private ByteArrayOutputStream splitPacketBuffer = new ByteArrayOutputStream();
 	private int splitPacketRemaining = 0;
+	private OutputStream audioOut;
 
 	private int[] channelAssignments = new int[128];
 
@@ -143,7 +144,6 @@ public class StreamingClient implements Runnable {
 					processControlMessage(byteBuf, 0, packet.getLength());
 					break;
 				case PACKET_TYPE_CONTROL_CONTINUED:
-					// todo: check the packet timestamp/ID to see if it matched the split packet
 					splitPacketBuffer.write(byteBuf, 13, packet.getLength() - 13);
 					splitPacketRemaining--;
 					if (splitPacketRemaining == 0) {
@@ -173,6 +173,7 @@ public class StreamingClient implements Runnable {
 
 	private void setupLogging() throws IOException {
 		loggingOut = new FileOutputStream(new File("streaminglog.dat"));
+		audioOut = new FileOutputStream(new File("audiolog.dat"));
 	}
 
 	private void processControlMessage(byte[] buffer, int begin, int length) throws IOException {
@@ -229,7 +230,6 @@ public class StreamingClient implements Runnable {
 		int escmsg = buffer[begin] & 0xff;
 		Class<? extends GeneratedMessage> clazz = EStreamControlMessageMap.getById(escmsg);
 		System.out.println(Integer.toString(escmsg, 16) + ":" + clazz);
-		if (System.getenv("VARODAHN_STREAMNOPARSE") != null) return null;
 		byte[] messageBytes = new byte[length - 1];
 		System.arraycopy(buffer, begin + 1, messageBytes, 0, length - 1);
 		try {
@@ -272,7 +272,9 @@ public class StreamingClient implements Runnable {
 	}
 
 	private void processAudioControlMessage(byte[] msg, int offset, int length) throws IOException {
-		System.out.println("Ignoring audio control message");
+		if (msg[offset+13] != 0x1) return;
+		System.out.println("Writing audio control message");
+		audioOut.write(msg, offset+30, length-30);
 	}
 
 	private void processVideoControlMessage(byte[] msg, int offset, int length) throws IOException {
