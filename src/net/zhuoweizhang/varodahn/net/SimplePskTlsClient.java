@@ -1,4 +1,4 @@
-package net.zhuoweizhang.varodahn;
+package net.zhuoweizhang.varodahn.net;
 
 import java.io.IOException;
 

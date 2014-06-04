@@ -1,3 +1,3 @@
 #!/bin/sh
 . ./classpath.sh
-java -cp bin:$MYCLASSPATH net.zhuoweizhang.varodahn.PskTester $@
+java -cp libbin:$MYCLASSPATH net.zhuoweizhang.varodahn.net.PskTester $@

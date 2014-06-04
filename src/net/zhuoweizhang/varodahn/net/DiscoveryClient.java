@@ -1,4 +1,4 @@
-package net.zhuoweizhang.varodahn;
+package net.zhuoweizhang.varodahn.net;
 
 import java.io.*;
 import java.net.*;
@@ -14,7 +14,9 @@ public class DiscoveryClient implements Runnable {
 	private Thread thread;
 	private boolean isRunning = false;
 	private DatagramSocket socket;
+	private int seqNum;
 	private static final byte[] PACKET_PREHEADER = {(byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff, 0x21, 0x4c, 0x5f, (byte) 0xa0};
+	private static int nextSeqNum = 0;
 
 	public static interface ResponseListener {
 		public void onResponse(SocketAddress address, CMsgRemoteClientBroadcastHeader header, CMsgRemoteClientBroadcastStatus status);
@@ -24,6 +26,7 @@ public class DiscoveryClient implements Runnable {
 	public DiscoveryClient(long clientId, ResponseListener listener) {
 		this.clientId = clientId;
 		this.listener = listener;
+		this.seqNum = nextSeqNum++;
 	}
 
 	public void start() {
